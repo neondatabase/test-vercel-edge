@@ -67,8 +67,8 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
                 fields: rawResult.fields,
             };
             response = JSON.stringify(res);
-        } catch (e) {
-            error = JSON.stringify(e);
+        } catch (e: any) {
+            error = e.message + "\n" + e.stack + "\n" + JSON.stringify(e) + '\n' + e.toString();
             isFailed = true;
         }
 
