@@ -38,17 +38,48 @@ interface CommonQuery {
     durationNs: number | undefined;
 }
 
+const awaitTimeout = (delay: number) => new Promise(resolve => setTimeout(resolve, delay));
+
 export default async (request: NextRequest, event: NextFetchEvent) => {
+    const funcBootedAt = new Date();
+    const globalTimeout = awaitTimeout(15000).then(() => undefined);
+
     const { region } = geolocation(request);
     const slRequest: SLRequest = await request.json();
 
     let queries: CommonQuery[] = [];
+    let hasFailedQuery = false;
 
-    const pool = new Pool({
-        connectionString: slRequest.connstr,
-    });
-    
+    let pool;
+    const poolConnectStartedAt = new Date();
+    try {
+        pool = new Pool({
+            connectionString: slRequest.connstr,
+        });
+    } catch (e: any) {
+        const common: CommonQuery = {
+            exitnode: 'vercel-edge@' + region,
+            kind: 'db',
+            addr: slRequest.connstr,
+            driver: driverName,
+            method: 'connect',
+            request: "",
+            response: "",
+            error: e.stack + "\n" + JSON.stringify(e),
+            startedAt: poolConnectStartedAt,
+            finishedAt: undefined,
+            isFailed: true,
+            durationNs: undefined,
+        };
+        queries.push(common);
+        hasFailedQuery = true;
+    }
+
     for (const slQuery of slRequest.queries) {
+        if (hasFailedQuery) {
+            break;
+        }
+
         let params = (slQuery.params == null) ? undefined : slQuery.params;
         const startedAt = new Date();
         let finishedAt = undefined;
@@ -57,7 +88,11 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
         let isFailed = false;
 
         try {
-            const rawResult = await pool.query(slQuery.query, params);
+            const rawResult = await Promise.race([pool.query(slQuery.query, params), globalTimeout]);
+            if (!rawResult) {
+                throw new Error("global 15s timeout exceeded, edge function was invoked at " + funcBootedAt.toISOString());
+            }
+
             finishedAt = new Date();
             const res = {
                 rows: rawResult.rows,
@@ -94,6 +129,7 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
         queries.push(common);
 
         if (isFailed) {
+            hasFailedQuery = true;
             // don't continue with the rest of the queries
             break;
         }
@@ -104,6 +140,9 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
         queries,
     };
 
-    event.waitUntil(pool.end());  // doesn't hold up the response
+    if (!hasFailedQuery) {
+        event.waitUntil(pool.end());  // doesn't hold up the response
+    }
+
     return NextResponse.json(slResponse);
 }
