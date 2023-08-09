@@ -141,7 +141,7 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
     };
 
     if (!hasFailedQuery) {
-        event.waitUntil(pool.end());  // doesn't hold up the response
+        event.waitUntil(pool!.end());  // doesn't hold up the response
     }
 
     return NextResponse.json(slResponse);
