@@ -41,6 +41,7 @@ interface CommonQuery {
 const awaitTimeout = (delay: number) => new Promise(resolve => setTimeout(resolve, delay));
 
 export default async (request: NextRequest, event: NextFetchEvent) => {
+    console.log('started');
     const funcBootedAt = new Date();
     const globalTimeout = awaitTimeout(15000).then(() => undefined);
 
@@ -56,6 +57,7 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
         pool = new Pool({
             connectionString: slRequest.connstr,
         });
+        console.log('pool created');
     } catch (e: any) {
         const common: CommonQuery = {
             exitnode: 'vercel-edge@' + region,
@@ -88,10 +90,12 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
         let isFailed = false;
 
         try {
+            console.log('running query ' + slQuery.query)
             const rawResult = await Promise.race([pool!.query(slQuery.query, params), globalTimeout]);
             if (!rawResult) {
                 throw new Error("global 15s timeout exceeded, edge function was invoked at " + funcBootedAt.toISOString());
             }
+            console.log('query finished');
 
             finishedAt = new Date();
             const res = {
@@ -141,8 +145,10 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
     };
 
     if (!hasFailedQuery) {
+        console.log('ending pool');
         event.waitUntil(pool!.end());  // doesn't hold up the response
     }
 
+    console.log('finished');
     return NextResponse.json(slResponse);
 }
