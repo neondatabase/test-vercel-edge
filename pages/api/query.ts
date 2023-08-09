@@ -88,7 +88,7 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
         let isFailed = false;
 
         try {
-            const rawResult = await Promise.race([pool.query(slQuery.query, params), globalTimeout]);
+            const rawResult = await Promise.race([pool!.query(slQuery.query, params), globalTimeout]);
             if (!rawResult) {
                 throw new Error("global 15s timeout exceeded, edge function was invoked at " + funcBootedAt.toISOString());
             }
