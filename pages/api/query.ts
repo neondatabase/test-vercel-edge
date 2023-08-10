@@ -40,115 +40,146 @@ interface CommonQuery {
 
 const awaitTimeout = (delay: number) => new Promise(resolve => setTimeout(resolve, delay));
 
-export default async (request: NextRequest, event: NextFetchEvent) => {
-    console.log('started');
-    const funcBootedAt = new Date();
-    const globalTimeout = awaitTimeout(15000).then(() => undefined);
-
-    const { region } = geolocation(request);
-    const slRequest: SLRequest = await request.json();
-
-    let queries: CommonQuery[] = [];
-    let hasFailedQuery = false;
-
-    let pool;
-    const poolConnectStartedAt = new Date();
+async function endPool(pool: Pool) {
     try {
-        pool = new Pool({
-            connectionString: slRequest.connstr,
-        });
-        console.log('pool created');
-    } catch (e: any) {
-        const common: CommonQuery = {
-            exitnode: 'vercel-edge@' + region,
-            kind: 'db',
-            addr: slRequest.connstr,
-            driver: driverName,
-            method: 'connect',
-            request: "",
-            response: "",
-            error: e.stack + "\n" + JSON.stringify(e),
-            startedAt: poolConnectStartedAt,
-            finishedAt: undefined,
-            isFailed: true,
-            durationNs: undefined,
-        };
-        queries.push(common);
-        hasFailedQuery = true;
-    }
-
-    for (const slQuery of slRequest.queries) {
-        if (hasFailedQuery) {
-            break;
-        }
-
-        let params = (slQuery.params == null) ? undefined : slQuery.params;
-        const startedAt = new Date();
-        let finishedAt = undefined;
-        let response = "";
-        let error = "";
-        let isFailed = false;
-
-        try {
-            console.log('running query ' + slQuery.query)
-            const rawResult = await Promise.race([pool!.query(slQuery.query, params), globalTimeout]);
-            if (!rawResult) {
-                throw new Error("global 15s timeout exceeded, edge function was invoked at " + funcBootedAt.toISOString());
-            }
-            console.log('query finished');
-
-            finishedAt = new Date();
-            const res = {
-                rows: rawResult.rows,
-                rowCount: rawResult.rowCount,
-                command: rawResult.command,
-                oid: rawResult.oid,
-                fields: rawResult.fields,
-            };
-            response = JSON.stringify(res);
-        } catch (e: any) {
-            error = e.stack + "\n" + JSON.stringify(e);
-            isFailed = true;
-        }
-
-        let durationNs;
-        if (finishedAt != undefined && startedAt != undefined) {
-            durationNs = (finishedAt.getTime() - startedAt.getTime()) * 1000000;
-        }
-
-        const common: CommonQuery = {
-            exitnode: 'vercel-edge@' + region,
-            kind: 'db',
-            addr: slRequest.connstr,
-            driver: driverName,
-            method: 'query',
-            request: JSON.stringify(slQuery),
-            response,
-            error,
-            startedAt,
-            finishedAt,
-            isFailed,
-            durationNs,
-        };
-        queries.push(common);
-
-        if (isFailed) {
-            hasFailedQuery = true;
-            // don't continue with the rest of the queries
-            break;
-        }
-    }
-
-    const slResponse: SLResponse = {
-        driverName,
-        queries,
-    };
-
-    if (!hasFailedQuery) {
         console.log('ending pool');
-        event.waitUntil(pool!.end());  // doesn't hold up the response
+        await pool.end();
+    } catch (e: any) {
+        console.log('pool.end() caught exception: ' + e.stack);
     }
+}
 
-    console.log('finished');
-    return NextResponse.json(slResponse);
+export default async (request: NextRequest, event: NextFetchEvent) => {
+    try {
+        console.log('started');
+        const funcBootedAt = new Date();
+        const globalTimeout = awaitTimeout(15000).then(() => undefined);
+
+        const { region } = geolocation(request);
+        const slRequest: SLRequest = await request.json();
+
+        let queries: CommonQuery[] = [];
+        let hasFailedQuery = false;
+
+        let pool;
+        const poolConnectStartedAt = new Date();
+        try {
+            pool = new Pool({
+                connectionString: slRequest.connstr,
+            });
+            console.log('pool created');
+        } catch (e: any) {
+            console.log('new pool caught exception: ' + e.stack);
+            const common: CommonQuery = {
+                exitnode: 'vercel-edge@' + region,
+                kind: 'db',
+                addr: slRequest.connstr,
+                driver: driverName,
+                method: 'connect',
+                request: "",
+                response: "",
+                error: e.stack + "\n" + JSON.stringify(e),
+                startedAt: poolConnectStartedAt,
+                finishedAt: undefined,
+                isFailed: true,
+                durationNs: undefined,
+            };
+            queries.push(common);
+            hasFailedQuery = true;
+        }
+
+        for (const slQuery of slRequest.queries) {
+            if (hasFailedQuery) {
+                break;
+            }
+
+            let params = (slQuery.params == null) ? undefined : slQuery.params;
+            const startedAt = new Date();
+            let finishedAt = undefined;
+            let response = "";
+            let error = "";
+            let isFailed = false;
+
+            try {
+                console.log('running query ' + slQuery.query)
+                const rawResult = await Promise.race([pool!.query(slQuery.query, params), globalTimeout]);
+                if (!rawResult) {
+                    throw new Error("global 15s timeout exceeded, edge function was invoked at " + funcBootedAt.toISOString());
+                }
+                console.log('query finished');
+
+                finishedAt = new Date();
+                const res = {
+                    rows: rawResult.rows,
+                    rowCount: rawResult.rowCount,
+                    command: rawResult.command,
+                    oid: rawResult.oid,
+                    fields: rawResult.fields,
+                };
+                response = JSON.stringify(res);
+            } catch (e: any) {
+                console.log('query caught exception: ' + e.stack);
+                error = e.stack + "\n" + JSON.stringify(e);
+                isFailed = true;
+            }
+
+            let durationNs;
+            if (finishedAt != undefined && startedAt != undefined) {
+                durationNs = (finishedAt.getTime() - startedAt.getTime()) * 1000000;
+            }
+
+            const common: CommonQuery = {
+                exitnode: 'vercel-edge@' + region,
+                kind: 'db',
+                addr: slRequest.connstr,
+                driver: driverName,
+                method: 'query',
+                request: JSON.stringify(slQuery),
+                response,
+                error,
+                startedAt,
+                finishedAt,
+                isFailed,
+                durationNs,
+            };
+            queries.push(common);
+
+            if (isFailed) {
+                hasFailedQuery = true;
+                // don't continue with the rest of the queries
+                break;
+            }
+        }
+
+        const slResponse: SLResponse = {
+            driverName,
+            queries,
+        };
+
+        if (pool) {
+            event.waitUntil(endPool(pool));  // doesn't hold up the response
+        }
+
+        console.log('finished');
+        return NextResponse.json(slResponse);
+    } catch (e: any) {
+        console.log('global caught exception: ' + e.stack);
+        return NextResponse.json({
+            driverName,
+            queries: [{
+                exitnode: 'vercel-edge@unknown',
+                kind: 'unhandled-exception',
+                addr: "unknown",
+                driver: driverName,
+                method: 'catch',
+                request: "",
+                response: "",
+                error: e.stack + "\n" + JSON.stringify(e),
+                startedAt: undefined,
+                finishedAt: undefined,
+                isFailed: true,
+                durationNs: undefined,
+            }],
+        });
+    }
 }
