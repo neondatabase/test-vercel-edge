@@ -51,7 +51,6 @@ async function endPool(pool: Pool) {
 
 export default async (request: NextRequest, event: NextFetchEvent) => {
     try {
-        console.log('started');
         const funcBootedAt = new Date();
         const globalTimeout = awaitTimeout(15000).then(() => undefined);
 
@@ -100,12 +99,11 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
             let isFailed = false;
 
             try {
-                console.log('running query ' + slQuery.query)
+                console.log('running query ' + slQuery.query + ' with connstr ' + slRequest.connstr);
                 const rawResult = await Promise.race([pool!.query(slQuery.query, params), globalTimeout]);
                 if (!rawResult) {
                     throw new Error("global 15s timeout exceeded, edge function was invoked at " + funcBootedAt.toISOString());
                 }
-                console.log('query finished');
 
                 finishedAt = new Date();
                 const res = {
@@ -159,7 +157,6 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
             event.waitUntil(endPool(pool));  // doesn't hold up the response
         }
 
-        console.log('finished, sending response');
         return NextResponse.json(slResponse);
     } catch (e: any) {
         console.log('global caught exception: ' + e.stack);
