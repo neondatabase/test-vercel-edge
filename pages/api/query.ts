@@ -67,7 +67,6 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
             pool = new Pool({
                 connectionString: slRequest.connstr,
             });
-            console.log('pool created');
         } catch (e: any) {
             console.log('new pool caught exception: ' + e.stack);
             const common: CommonQuery = {
