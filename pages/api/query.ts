@@ -159,7 +159,7 @@ export default async (request: NextRequest, event: NextFetchEvent) => {
             event.waitUntil(endPool(pool));  // doesn't hold up the response
         }
 
-        console.log('finished');
+        console.log('finished, sending response');
         return NextResponse.json(slResponse);
     } catch (e: any) {
         console.log('global caught exception: ' + e.stack);
