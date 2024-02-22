@@ -1,4 +1,4 @@
-import { neon } from '@neondatabase/serverless_0_7';
+import { neon } from '@neondatabase/serverless_0_8';
 import { geolocation } from '@vercel/edge';
 import { NextFetchEvent, NextRequest, NextResponse } from 'next/server';
 
